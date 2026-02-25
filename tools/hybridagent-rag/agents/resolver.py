@@ -183,26 +183,36 @@ class ResolverAgent(BaseAgent):
             for conflict in conflicts:
                 conflict_info += f"- {conflict.get('description', 'Unknown conflict')}\n"
         
-        system_prompt = """You are a Python dependency resolution expert. 
-Generate specific package versions that are compatible with each other.
-Format your response as JSON:
+        system_prompt = """You are a Python dependency resolution expert with deep knowledge of package compatibility.
+Your task is to generate SPECIFIC version numbers that are known to work together.
+
+IMPORTANT RULES:
+1. Use REAL version numbers (e.g., "1.21.0", not "latest" or "1.x")
+2. Consider Python version compatibility
+3. Avoid known conflicts (e.g., TensorFlow 2.x needs Python >=3.7)
+4. Use stable versions from 2020-2023 era
+5. Format response as valid JSON
+
+Response format:
 {
-    "python_version": "3.x",
+    "python_version": "3.8",
     "packages": {
-        "package_name": "version"
+        "numpy": "1.21.0",
+        "pandas": "1.3.0"
     },
-    "reasoning": "brief explanation"
+    "reasoning": "These versions are compatible with Python 3.8 and each other"
 }"""
         
         prompt = f"""Resolve dependencies for this Python code:
 
-Imports: {', '.join(imports)}
+Required imports: {', '.join(imports)}
 Minimum Python version: {python_version}
 API patterns detected: {', '.join(api_patterns) if api_patterns else 'None'}
 {context_info}
 {conflict_info}
 
-Provide compatible package versions."""
+Generate a working dependency solution with specific version numbers.
+Focus on compatibility and stability."""
         
         response = self.query_llm(
             prompt=prompt,
@@ -234,39 +244,187 @@ Provide compatible package versions."""
     
     def _generate_conservative_candidate(self, analysis: Dict) -> Dict:
         """
-        Generate conservative solution with stable versions
+        Generate conservative solution with stable versions + fallback
         """
         imports = analysis.get('imports', [])
         python_version = analysis.get('python_version_min', '3.8')
         
-        # Conservative version mappings (stable, well-tested versions)
+        # Extended conservative version mappings (stable, well-tested versions)
         conservative_versions = {
-            'numpy': '1.21.0',
-            'pandas': '1.3.0',
-            'scipy': '1.7.0',
-            'matplotlib': '3.4.0',
-            'sklearn': '0.24.0',
-            'scikit-learn': '0.24.0',
-            'requests': '2.26.0',
-            'flask': '2.0.0',
-            'django': '3.2.0',
-            'tensorflow': '2.6.0',
-            'torch': '1.9.0',
-            'pytest': '6.2.0',
+            # Core Data Science
+            'numpy': '1.21.6',
+            'pandas': '1.3.5',
+            'scipy': '1.7.3',
+            'matplotlib': '3.5.3',
+            'seaborn': '0.11.2',
+            'plotly': '5.3.1',
+            'bokeh': '2.4.3',
+            
+            # Machine Learning
+            'sklearn': '1.0.2',
+            'scikit-learn': '1.0.2',
+            'tensorflow': '2.8.4',
+            'torch': '1.11.0',
+            'keras': '2.8.0',
+            'xgboost': '1.5.2',
+            'lightgbm': '3.3.2',
+            'catboost': '1.0.4',
+            
+            # Deep Learning Utilities
+            'torchvision': '0.12.0',
+            'tensorboard': '2.8.0',
+            'tensorboardX': '2.5',
+            
+            # NLP
+            'nltk': '3.7',
+            'spacy': '3.2.4',
+            'transformers': '4.17.0',
+            'gensim': '4.1.2',
+            'textblob': '0.17.1',
+            
+            # Computer Vision
+            'opencv-python': '4.5.5.64',
+            'cv2': '4.5.5.64',
+            'pillow': '9.0.1',
+            'PIL': '9.0.1',
+            'imageio': '2.16.1',
+            'skimage': '0.19.2',
+            'scikit-image': '0.19.2',
+            
+            # Web Frameworks
+            'requests': '2.27.1',
+            'flask': '2.0.3',
+            'django': '3.2.13',
+            'fastapi': '0.75.0',
+            'aiohttp': '3.8.1',
+            'tornado': '6.1',
+            'bottle': '0.12.19',
+            
+            # Web Scraping
+            'beautifulsoup4': '4.10.0',
+            'bs4': '4.10.0',
+            'selenium': '4.1.3',
+            'scrapy': '2.6.1',
+            'lxml': '4.8.0',
+            
+            # Database
+            'sqlalchemy': '1.4.32',
+            'pymongo': '4.0.2',
+            'redis': '4.1.4',
+            'psycopg2': '2.9.3',
+            'psycopg2-binary': '2.9.3',
+            'mysql-connector-python': '8.0.28',
+            'pymysql': '1.0.2',
+            
+            # Data Formats
+            'pyyaml': '6.0',
+            'yaml': '6.0',
+            'toml': '0.10.2',
+            'xmltodict': '0.12.0',
+            'openpyxl': '3.0.9',
+            'xlrd': '2.0.1',
+            'h5py': '3.6.0',
+            
+            # Testing
+            'pytest': '7.1.1',
+            'mock': '4.0.3',
+            'coverage': '6.3.2',
+            'hypothesis': '6.39.3',
+            
+            # Utilities
+            'click': '8.0.4',
+            'tqdm': '4.63.0',
+            'joblib': '1.1.0',
+            'more-itertools': '8.12.0',
+            'python-dateutil': '2.8.2',
+            'dateutil': '2.8.2',
+            'pytz': '2021.3',
+            'six': '1.16.0',
+            
+            # Async
+            'asyncio': '3.4.3',
+            'aiofiles': '0.8.0',
+            
+            # Serialization
+            'pickle5': '0.0.11',
+            'dill': '0.3.4',
+            'cloudpickle': '2.0.0',
+            
+            # Cryptography
+            'cryptography': '36.0.2',
+            'pycrypto': '2.6.1',
+            
+            # Networking
+            'paramiko': '2.10.3',
+            'fabric': '2.6.0',
+            
+            # AWS/Cloud
+            'boto3': '1.21.21',
+            'botocore': '1.24.21',
+            'google-cloud-storage': '2.1.0',
+            
+            # Jupyter
+            'jupyter': '1.0.0',
+            'ipython': '8.1.1',
+            'notebook': '6.4.10',
+            'ipykernel': '6.9.2',
+            'ipywidgets': '7.7.0',
         }
         
         packages = {}
+        unknown_packages = []
+        
         for imp in imports:
             if imp in conservative_versions:
                 packages[imp] = conservative_versions[imp]
+            else:
+                # Fallback for unknown packages
+                unknown_packages.append(imp)
+                # Try to guess a reasonable version
+                packages[imp] = self._guess_package_version(imp)
+        
+        # Adjust confidence based on unknown packages
+        if not unknown_packages:
+            confidence = 0.7  # High confidence - all known
+        elif len(unknown_packages) < len(imports) / 2:
+            confidence = 0.5  # Medium confidence - some unknown
+        else:
+            confidence = 0.3  # Low confidence - mostly unknown
+        
+        reasoning = 'Conservative approach with stable versions'
+        if unknown_packages:
+            reasoning += f'. Unknown packages ({len(unknown_packages)}): {", ".join(unknown_packages[:3])}'
+            if len(unknown_packages) > 3:
+                reasoning += f' and {len(unknown_packages) - 3} more'
         
         return {
             'source': 'conservative',
             'python_version': python_version,
             'packages': packages,
-            'confidence': 0.6,
-            'reasoning': 'Conservative approach with stable versions'
+            'confidence': confidence,
+            'reasoning': reasoning,
+            'unknown_packages': unknown_packages
         }
+    
+    def _guess_package_version(self, package_name: str) -> str:
+        """
+        Guess a reasonable version for unknown packages
+        """
+        # Common patterns for package versions
+        version_patterns = {
+            # Packages that typically start at 1.x
+            'default': '1.0.0',
+            # Packages that use 0.x versioning
+            'pre_1_0': '0.9.0',
+        }
+        
+        # Some heuristics
+        if package_name.startswith('py'):
+            return '1.0.0'
+        elif any(x in package_name for x in ['alpha', 'beta', 'dev']):
+            return '0.5.0'
+        else:
+            return '1.0.0'  # Safe default
     
     def _generate_aggressive_candidate(self, analysis: Dict) -> Dict:
         """

@@ -116,6 +116,11 @@ class ValidatorAgent(BaseAgent):
             issues.append(f"Invalid Python version format: {python_version}")
             score *= 0.3
         
+        # Check if we have any packages at all
+        if not packages:
+            issues.append("No packages specified")
+            score = 0.1
+        
         # Check package versions
         for package, version in packages.items():
             # Check version format
@@ -123,6 +128,16 @@ class ValidatorAgent(BaseAgent):
                 warnings.append(f"{package}: version not specified")
                 score *= 0.95
                 continue
+            
+            # Validate version format (should be x.y.z)
+            try:
+                parts = version.split('.')
+                if len(parts) < 2:
+                    warnings.append(f"{package}: unusual version format '{version}'")
+                    score *= 0.95
+            except:
+                warnings.append(f"{package}: invalid version format '{version}'")
+                score *= 0.9
             
             # Check for known incompatibilities
             incompatibility = self._check_known_incompatibilities(

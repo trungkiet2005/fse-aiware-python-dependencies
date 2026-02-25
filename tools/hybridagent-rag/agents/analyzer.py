@@ -91,25 +91,59 @@ class AnalyzerAgent(BaseAgent):
     
     def _extract_imports(self, code: str) -> List[str]:
         """
-        Extract all import statements from code
+        Extract all import statements from code using AST + regex fallback
         """
         imports = set()
         
-        # Regex patterns for imports
+        # Standard library modules to filter out
+        stdlib_modules = {
+            'os', 'sys', 're', 'json', 'time', 'datetime', 'collections',
+            'itertools', 'functools', 'math', 'random', 'string', 'io',
+            'pathlib', 'subprocess', 'threading', 'multiprocessing', 'logging',
+            'argparse', 'configparser', 'csv', 'pickle', 'shelve', 'sqlite3',
+            'unittest', 'doctest', 'pdb', 'profile', 'timeit', 'trace',
+            'warnings', 'contextlib', 'abc', 'atexit', 'copy', 'pprint',
+            'enum', 'types', 'typing', 'dataclasses', 'asyncio', 'socket',
+            'ssl', 'email', 'html', 'xml', 'urllib', 'http', 'ftplib',
+            'smtplib', 'uuid', 'hashlib', 'hmac', 'secrets', 'struct',
+            'codecs', 'locale', 'gettext', 'platform', 'errno', 'ctypes',
+            'gc', 'inspect', 'site', 'builtins', '__future__', '__main__'
+        }
+        
+        # Method 1: AST parsing (most reliable)
+        try:
+            tree = ast.parse(code)
+            for node in ast.walk(tree):
+                if isinstance(node, ast.Import):
+                    for alias in node.names:
+                        module_name = alias.name.split('.')[0]
+                        if module_name not in stdlib_modules:
+                            imports.add(module_name)
+                elif isinstance(node, ast.ImportFrom):
+                    if node.module:
+                        module_name = node.module.split('.')[0]
+                        if module_name not in stdlib_modules:
+                            imports.add(module_name)
+        except SyntaxError:
+            # If AST fails, fall back to regex
+            self.log("AST parsing failed, using regex fallback", "WARNING")
+        except Exception as e:
+            self.log(f"AST parsing error: {e}", "WARNING")
+        
+        # Method 2: Regex fallback (for syntax errors or edge cases)
         patterns = [
-            r'^import\s+([\w.]+)',
-            r'^from\s+([\w.]+)\s+import',
+            r'^\s*import\s+([\w.]+)',  # Allow leading whitespace
+            r'^\s*from\s+([\w.]+)\s+import',
         ]
         
         for line in code.split('\n'):
-            line = line.strip()
             for pattern in patterns:
                 match = re.match(pattern, line)
                 if match:
                     module = match.group(1)
-                    # Get top-level package
-                    top_level = module.split('.')[0]
-                    imports.add(top_level)
+                    module_name = module.split('.')[0]
+                    if module_name not in stdlib_modules:
+                        imports.add(module_name)
         
         return sorted(list(imports))
     

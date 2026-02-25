@@ -132,7 +132,15 @@ class CoordinatorAgent(BaseAgent):
                     break
             
             # Determine success
-            success = solution is not None and solution.get('final_score', 0) >= 0.5
+            # A solution is successful if:
+            # 1. Solution exists
+            # 2. Has at least one package
+            # 3. Meets minimum score threshold
+            success = (
+                solution is not None 
+                and len(solution.get('packages', {})) > 0
+                and solution.get('final_score', 0) >= 0.3  # Lowered threshold
+            )
             
             # Step 4: Learn from result
             self.log("Step 4: Learning from result...")
