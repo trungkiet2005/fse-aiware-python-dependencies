@@ -297,7 +297,7 @@ for i, path in enumerate(snippets, 1):
     print(f"{'='*80}\n")
 ```
 
-### Cell 11: Full Evaluation
+### Cell 11: Full Evaluation (Agent Only)
 ```python
 import glob
 import json
@@ -326,7 +326,7 @@ for path in tqdm(all_snippets, desc="Loading"):
         print(f"Skip {path}: {e}")
 
 # Run evaluation
-print("\nStarting evaluation...")
+print("\nStarting agent evaluation...")
 start_time = time.time()
 
 results = coordinator.batch_process(snippets, quick_mode=True, verbose=True)
@@ -335,48 +335,139 @@ total_time = time.time() - start_time
 
 # Metrics
 total = len(results)
-successful = sum(1 for r in results if r['success'])
-success_rate = (successful / total * 100) if total > 0 else 0
+agent_successful = sum(1 for r in results if r['success'])
+agent_success_rate = (agent_successful / total * 100) if total > 0 else 0
 avg_time = sum(r['execution_time'] for r in results) / total if total > 0 else 0
 
 print(f"\n{'='*80}")
-print(f"RESULTS")
+print(f"AGENT RESULTS (Internal Validation)")
 print(f"{'='*80}")
 print(f"Total:      {total}")
-print(f"Success:    {successful} ({success_rate:.1f}%)")
-print(f"Failed:     {total - successful}")
+print(f"Success:    {agent_successful} ({agent_success_rate:.1f}%)")
+print(f"Failed:     {total - agent_successful}")
 print(f"Avg Time:   {avg_time:.2f}s")
 print(f"Total Time: {total_time:.2f}s")
 print(f"{'='*80}")
 
-# Save
-output = {
+# Save agent results
+agent_output = {
     'total_snippets': total,
-    'successful': successful,
-    'success_rate': success_rate,
+    'agent_successful': agent_successful,
+    'agent_success_rate': agent_success_rate,
     'avg_time': avg_time,
     'total_time': total_time,
     'results': results
 }
 
-with open('/kaggle/working/hybridagent_results.json', 'w') as f:
-    json.dump(output, f, indent=2)
+with open('/kaggle/working/hybridagent_agent_results.json', 'w') as f:
+    json.dump(agent_output, f, indent=2)
 
-print("\nResults saved to: /kaggle/working/hybridagent_results.json")
+print("\nAgent results saved!")
 ```
 
-### Cell 12: Compare with PLLM
+### Cell 12: Docker Validation (Ground Truth)
+```python
+# Install docker package
+!pip install -q docker
+
+from docker_validator import DockerValidator
+import json
+
+print("="*80)
+print("DOCKER VALIDATION (Ground Truth)")
+print("="*80)
+
+# Initialize Docker validator
+docker_val = DockerValidator(timeout=60)
+
+if not docker_val.available:
+    print("⚠️ Docker not available on Kaggle!")
+    print("⚠️ Skipping Docker validation")
+    print("⚠️ Results based on agent internal validation only")
+else:
+    # Prepare solutions for Docker testing
+    print(f"\nPreparing {len(results)} solutions for Docker testing...")
+    
+    solutions_to_test = []
+    for i, result in enumerate(results):
+        if result['success']:  # Only test agent-successful cases
+            snippet = snippets[i]
+            solution = result['solution']
+            
+            solutions_to_test.append((
+                snippet['code'],
+                solution['packages'],
+                solution['python_version'],
+                snippet['path']
+            ))
+    
+    print(f"Testing {len(solutions_to_test)} agent-successful solutions in Docker...\n")
+    
+    # Run Docker validation
+    docker_results = docker_val.batch_validate(solutions_to_test, show_progress=True)
+    
+    # Calculate ground truth metrics
+    docker_successful = sum(1 for r in docker_results if r['docker_success'])
+    docker_success_rate = (docker_successful / len(docker_results) * 100) if docker_results else 0
+    
+    # Calculate false positives
+    false_positives = len(docker_results) - docker_successful
+    false_positive_rate = (false_positives / len(docker_results) * 100) if docker_results else 0
+    
+    # Real success rate (out of all snippets)
+    real_success_rate = (docker_successful / total * 100) if total > 0 else 0
+    
+    print(f"\n{'='*80}")
+    print(f"DOCKER RESULTS (Ground Truth)")
+    print(f"{'='*80}")
+    print(f"Agent said success:     {len(docker_results)}")
+    print(f"Docker confirmed:       {docker_successful} ({docker_success_rate:.1f}%)")
+    print(f"Docker failed:          {false_positives} ({false_positive_rate:.1f}%)")
+    print(f"\nREAL SUCCESS RATE:      {docker_successful}/{total} = {real_success_rate:.1f}%")
+    print(f"{'='*80}")
+    
+    # Combine results
+    final_output = {
+        'total_snippets': total,
+        'agent_successful': agent_successful,
+        'agent_success_rate': agent_success_rate,
+        'docker_tested': len(docker_results),
+        'docker_successful': docker_successful,
+        'docker_success_rate': docker_success_rate,
+        'real_success_rate': real_success_rate,
+        'false_positives': false_positives,
+        'false_positive_rate': false_positive_rate,
+        'avg_time': avg_time,
+        'docker_results': docker_results,
+        'agent_results': results
+    }
+    
+    with open('/kaggle/working/hybridagent_final_results.json', 'w') as f:
+        json.dump(final_output, f, indent=2)
+    
+    print("\nFinal results with ground truth saved!")
+```
+
+### Cell 13: Compare with PLLM
 ```python
 import pandas as pd
 
 # PLLM baseline
 pllm_success_rate = 38.0
 
+# Use real success rate if Docker was available, otherwise use agent rate
+if docker_val.available:
+    our_success_rate = real_success_rate
+    rate_type = "(Docker Ground Truth)"
+else:
+    our_success_rate = agent_success_rate
+    rate_type = "(Agent Internal)"
+
 # Comparison
 comparison = pd.DataFrame({
     'Metric': ['Success Rate (%)', 'Avg Time (s)', 'Improvement'],
     'PLLM': [pllm_success_rate, 60.0, '-'],
-    'HybridAgent-RAG': [success_rate, avg_time, f"+{success_rate - pllm_success_rate:.1f}%"]
+    'HybridAgent-RAG': [our_success_rate, avg_time, f"+{our_success_rate - pllm_success_rate:.1f}%"]
 })
 
 print("\nComparison:")
@@ -384,21 +475,33 @@ print("="*80)
 print(comparison.to_string(index=False))
 print("="*80)
 
-improvement = ((success_rate - pllm_success_rate) / pllm_success_rate * 100)
+improvement = ((our_success_rate - pllm_success_rate) / pllm_success_rate * 100)
 print(f"\nRelative Improvement: {improvement:.1f}%")
+print(f"Rate Type: {rate_type}")
 
-if success_rate > pllm_success_rate:
-    print(f"Outperforms PLLM by {success_rate - pllm_success_rate:.1f} points!")
+if our_success_rate > pllm_success_rate:
+    print(f"✅ Outperforms PLLM by {our_success_rate - pllm_success_rate:.1f} points!")
+else:
+    print(f"⚠️ Below PLLM by {pllm_success_rate - our_success_rate:.1f} points")
 ```
 
-### Cell 13: Paper Statistics
+### Cell 14: Paper Statistics
 ```python
 print("\nPAPER STATISTICS")
 print("="*80)
 
 print("\n1. PERFORMANCE:")
-print(f"   Success Rate: {success_rate:.1f}% (PLLM: {pllm_success_rate:.1f}%)")
-print(f"   Improvement: +{success_rate - pllm_success_rate:.1f} points ({improvement:.1f}% relative)")
+if docker_val.available:
+    print(f"   Agent Success Rate:  {agent_success_rate:.1f}%")
+    print(f"   Docker Success Rate: {real_success_rate:.1f}% ← GROUND TRUTH")
+    print(f"   False Positive Rate: {false_positive_rate:.1f}%")
+    print(f"   PLLM Baseline:       {pllm_success_rate:.1f}%")
+    print(f"   Improvement:         +{real_success_rate - pllm_success_rate:.1f} points ({improvement:.1f}% relative)")
+else:
+    print(f"   Success Rate: {agent_success_rate:.1f}% (PLLM: {pllm_success_rate:.1f}%)")
+    print(f"   Improvement: +{agent_success_rate - pllm_success_rate:.1f} points ({improvement:.1f}% relative)")
+    print(f"   ⚠️ No Docker validation (agent internal only)")
+
 print(f"   Avg Time: {avg_time:.2f}s")
 
 print("\n2. AGENT STATS:")
@@ -408,8 +511,14 @@ print(f"   Success: {stats['successes']}")
 print(f"   Failed: {stats['failures']}")
 
 print("\n3. KEY FINDINGS:")
-print(f"   - {success_rate:.1f}% success rate")
-print(f"   - {improvement:.1f}% improvement")
+if docker_val.available:
+    print(f"   - {real_success_rate:.1f}% REAL success rate (Docker validated)")
+    print(f"   - {improvement:.1f}% improvement over PLLM")
+    print(f"   - {false_positive_rate:.1f}% false positive rate")
+else:
+    print(f"   - {agent_success_rate:.1f}% success rate (agent internal)")
+    print(f"   - {improvement:.1f}% improvement")
+
 print(f"   - {avg_time:.2f}s avg time")
 print(f"   - <10GB VRAM")
 
@@ -426,6 +535,25 @@ print("\n="*80)
 
 ---
 
+## Docker Validation (Optional)
+
+**Kaggle free tier không có Docker**, nhưng nếu bạn test local hoặc dùng Kaggle Pro:
+
+### Test Local:
+```bash
+cd D:\AI_RESEARCH\fse-aiware-python-dependencies\tools\hybridagent-rag
+python test_docker_validation.py
+```
+
+### Kết Quả:
+- **Agent Success Rate**: Agent nói SUCCESS (internal validation)
+- **Docker Success Rate**: Thực tế chạy được (ground truth)
+- **False Positive Rate**: Agent sai
+
+Xem chi tiết: `DOCKER_VALIDATION.md`
+
+---
+
 ## Troubleshooting
 
 ### Lỗi: "No valid candidates"
@@ -436,6 +564,9 @@ print("\n="*80)
 
 ### Lỗi: "CUDA out of memory"
 → Use smaller model: `!ollama pull gemma2:2b`
+
+### Lỗi: "Docker not available"
+→ Normal on Kaggle free tier. Agent internal validation vẫn đủ tốt!
 
 ---
 

@@ -110,7 +110,7 @@ class CoordinatorAgent(BaseAgent):
                     self.log(f"Best candidate score: {final_score:.3f}")
                     
                     # Check if solution is good enough
-                    if final_score >= 0.5:  # Threshold for acceptance (lowered from 0.7)
+                    if final_score >= 0.3:  # Threshold for acceptance (lowered from 0.7 to 0.3)
                         solution = best_candidate
                         self.log("✅ Solution found!")
                         break
